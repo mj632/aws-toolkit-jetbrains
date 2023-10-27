@@ -129,17 +129,44 @@ internal class CodeWhispererCodeScanResultsView(private val project: Project) : 
                 BrowserUtil.browse(URI("https://docs.aws.amazon.com/codewhisperer/latest/userguide/security-scans.html"))
             }
         }
+        var panel =  JPanel()
+        val button = JButton("Click me")
+        val label = JLabel("Hello, World!")
+
+        panel.add(button)
+        panel.add(label)
 
         resultsPanel.apply {
             if (components.contains(progressIndicator)) remove(progressIndicator)
             add(BorderLayout.CENTER, splitter)
-            splitter.proportion = 1.0f
-            splitter.secondComponent = null
+            splitter.proportion = 0.5f
+            splitter.firstComponent = scrollPane
+            splitter.secondComponent = panel
             revalidate()
             repaint()
         }
 
         changeInfoLabelToDisplayScanCompleted(scannedFiles.size, isProjectTruncated)
+    }
+
+    fun updateSplitPanelResult(codeScanIssue: CodeWhispererCodeScanIssue) {
+
+        var panel =  JPanel()
+        val button = JButton("Click me")
+        val label = JLabel("now selected another code scan!")
+
+        panel.add(button)
+        panel.add(label)
+
+        resultsPanel.apply {
+            if (components.contains(progressIndicator)) remove(progressIndicator)
+            add(BorderLayout.CENTER, splitter)
+            splitter.proportion = 0.5f
+            splitter.firstComponent = scrollPane
+            splitter.secondComponent = panel
+            revalidate()
+            repaint()
+        }
     }
 
     fun setStoppingCodeScan() {
@@ -224,7 +251,7 @@ internal class CodeWhispererCodeScanResultsView(private val project: Project) : 
             revalidate()
         }
         splitter.apply {
-            secondComponent = scannedFilesViewPanel
+            firstComponent = scannedFilesViewPanel
             proportion = 0.5f
             revalidate()
             repaint()
