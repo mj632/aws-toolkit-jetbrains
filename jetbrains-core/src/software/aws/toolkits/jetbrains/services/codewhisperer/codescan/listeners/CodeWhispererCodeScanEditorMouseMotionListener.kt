@@ -4,7 +4,9 @@
 package software.aws.toolkits.jetbrains.services.codewhisperer.codescan.listeners
 
 import com.intellij.ide.BrowserUtil
-import com.intellij.openapi.editor.colors.EditorFontType
+import com.intellij.openapi.application.Application
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.editor.event.EditorMouseEvent
 import com.intellij.openapi.editor.event.EditorMouseEventArea
 import com.intellij.openapi.editor.event.EditorMouseMotionListener
@@ -23,9 +25,13 @@ import software.aws.toolkits.jetbrains.services.codewhisperer.codescan.CodeWhisp
 import software.aws.toolkits.jetbrains.utils.convertMarkdownToHTML
 import java.awt.Dimension
 import javax.swing.BorderFactory
+import javax.swing.BoxLayout
+import javax.swing.JButton
 import javax.swing.JEditorPane
+import javax.swing.JPanel
 import javax.swing.ScrollPaneConstants
 import javax.swing.event.HyperlinkEvent
+
 
 class CodeWhispererCodeScanEditorMouseMotionListener(private val project: Project) : EditorMouseMotionListener {
     /**
@@ -33,12 +39,15 @@ class CodeWhispererCodeScanEditorMouseMotionListener(private val project: Projec
      */
     private var currentPopupContext: ScanIssuePopupContext? = null
 
+
     private fun hidePopup() {
         currentPopupContext?.popup?.cancel()
         currentPopupContext = null
     }
 
     private fun showPopup(issue: CodeWhispererCodeScanIssue?, e: EditorMouseEvent) {
+        var buttonClicks = 0
+
         if (issue == null) {
             LOG.debug {
                 "Unable to show popup issue at ${e.logicalPosition} as the issue was null"
@@ -46,6 +55,7 @@ class CodeWhispererCodeScanEditorMouseMotionListener(private val project: Projec
             return
         }
         val description = convertMarkdownToHTML(issue.description.markdown)
+        val codeFix = issue
 
         val editorPane = JEditorPane("text/html", description).apply {
             putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, true)
@@ -53,7 +63,6 @@ class CodeWhispererCodeScanEditorMouseMotionListener(private val project: Projec
                 BorderFactory.createEmptyBorder(),
                 BorderFactory.createEmptyBorder(7, 11, 8, 11)
             )
-            font = e.editor.colorsScheme.getFont(EditorFontType.PLAIN)
             isEditable = false
             addHyperlinkListener { he ->
                 if (he.eventType == HyperlinkEvent.EventType.ACTIVATED) {
@@ -61,19 +70,73 @@ class CodeWhispererCodeScanEditorMouseMotionListener(private val project: Projec
                 }
             }
         }
+        val button = JButton("Apply fix")
+        button.alignmentX = 0f
+        button.isRolloverEnabled = true
+        button.toolTipText = "Apply suggested fix"
+        // TODO: add hover css
+        button.addActionListener { e ->
+            runInEdt {
+
+                val document = FileDocumentManager.getInstance().getDocument(issue.file)
+                println("------------------------------------------")
+                println(document?.text)
+                println("------------------------------------------")
+                val application: Application = ApplicationManager.getApplication()
+                val runnable = Runnable {
+                    // your code here
+                    if (document != null) {
+                        val lineCount = document.lineCount
+                        document.replaceString(0, lineCount,
+                            """def set_user_noncompliant():
+                            import os
+                            root = 0
+                            # set_user_noncompliance: the process user is set to root.
+                            sys.argv[0]
+                                            """.trimIndent())
+                    }
+                }
+                if (application.isDispatchThread) {
+                    application.runWriteAction(runnable)
+                } else {
+                    application.invokeLater { application.runWriteAction(runnable) }
+                }
+
+
+
+
+            }
+            buttonClicks++
+            button.text = "Apply fix $buttonClicks times clicked"
+        }
+        //Lay out the buttons from left to right.
+        val buttonPane = JPanel()
+        buttonPane.add(button)
+
         val scrollPane = JBScrollPane(editorPane).apply {
             verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
-            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
-            preferredSize = Dimension(480, 150)
+            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
+            preferredSize = Dimension(750, 550)
         }
 
-        val popup = JBPopupFactory.getInstance().createComponentPopupBuilder(scrollPane, null).setFocusable(true)
-            .setTitle(issue.title)
+        val containerPane = JPanel()
+        containerPane.layout = BoxLayout(containerPane, BoxLayout.PAGE_AXIS)
+
+
+        containerPane.add(scrollPane)
+        containerPane.add(buttonPane)
+
+
+
+        val popup = JBPopupFactory.getInstance().createComponentPopupBuilder(containerPane, null)
+            .setFocusable(true)
+//            .setTitle(issue.title)
             .createPopup()
         // Set the currently shown issue popup context as this issue
         popup.size = (popup as AbstractPopup).preferredContentSize
         popup.content.apply {
             size = preferredSize
+
         }
 
         currentPopupContext = ScanIssuePopupContext(issue, popup)
