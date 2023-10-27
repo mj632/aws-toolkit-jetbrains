@@ -7,7 +7,8 @@ import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
-import com.intellij.ui.DoubleClickListener
+import com.intellij.ui.ClickListener
+import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.treeStructure.Tree
 import software.aws.toolkits.core.utils.error
 import software.aws.toolkits.core.utils.getLogger
@@ -15,8 +16,8 @@ import software.aws.toolkits.jetbrains.services.codewhisperer.codescan.CodeWhisp
 import java.awt.event.MouseEvent
 import javax.swing.tree.DefaultMutableTreeNode
 
-class CodeWhispererCodeScanTreeMouseListener(private val project: Project) : DoubleClickListener() {
-    override fun onDoubleClick(e: MouseEvent): Boolean {
+class CodeWhispererCodeScanTreeMouseListener(private val project: Project) : ClickListener() {
+    fun onDoubleClick(e: MouseEvent): Boolean {
         val codeScanNode = (e.source as Tree).selectionPath?.lastPathComponent as? DefaultMutableTreeNode ?: return false
         var status = true
         synchronized(codeScanNode) {
@@ -45,6 +46,31 @@ class CodeWhispererCodeScanTreeMouseListener(private val project: Project) : Dou
             }
         }
         return status
+    }
+
+    fun onSingleClick(e: MouseEvent): Boolean {
+        val codeScanNode = (e.source as Tree).selectionPath?.lastPathComponent as? DefaultMutableTreeNode ?: return false
+        var status = true
+        synchronized(codeScanNode) {
+            if (codeScanNode.userObject !is CodeWhispererCodeScanIssue) return false
+            val codeScanIssue = codeScanNode.userObject as CodeWhispererCodeScanIssue
+            val textRange = codeScanIssue.textRange ?: return false
+            println("=======================")
+            println(textRange)
+            println(codeScanIssue)
+            if (codeScanIssue.isInvalid) return false
+        }
+        return status
+    }
+
+     override fun onClick(e: MouseEvent, clickCount: Int): Boolean {
+         if(clickCount == 2 && e.getButton() == MouseEvent.BUTTON1){
+             return onDoubleClick(e)
+         }
+         if(clickCount == 1 && e.getButton() == MouseEvent.BUTTON1){
+             return onSingleClick(e)
+         }
+        return false
     }
 
     companion object {
