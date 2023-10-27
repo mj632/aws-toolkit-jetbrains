@@ -49,12 +49,17 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.time.Duration
 import java.time.Instant
 import java.util.Base64
 import java.util.UUID
+import javax.swing.Icon
+import javax.swing.ImageIcon
 import kotlin.coroutines.coroutineContext
+
 
 class CodeWhispererCodeScanSession(val sessionContext: CodeScanSessionContext) {
     private val clientToken: UUID = UUID.randomUUID()
@@ -63,6 +68,177 @@ class CodeWhispererCodeScanSession(val sessionContext: CodeScanSessionContext) {
     private val clientAdaptor = CodeWhispererClientAdaptor.getInstance(sessionContext.project)
 
     private fun now() = Instant.now().toEpochMilli()
+    suspend fun run(): CodeScanResponse {
+        val css = """            
+            <style>
+                .code-diff-snippet { background-color: #2b2b2b; margin: 15px 0px;}
+                .diff-added {background-color: #044B53; }
+                .diff-removed { background-color: #632f34; }
+                .code { padding: 0px 15px; color: #fff;}
+                .h3 { font-size: 12px; font-weight: bold; }
+                .actions { display: inline-flex; }
+            </style>
+        """.trimIndent()
+        val description = """
+<h2>CWE-70 Unauthenticated Amazon SNS unsubscribe requests might succeed</h2>
+<p>Failing to set the `AuthenticateOnUnsubscribe` flag to `True` when confirming an SNS subscription causes all unsubscribe requests to succeed, even if they are unauthenticated. Consider setting this flag to `True`.</p>
+<hr/>
+
+<table>
+  <thead class="table-header">
+    <tr>
+      <td><b>Detector Name</b></td>
+      <td><b>Detector ID</b></td>
+      <td><b>Common Weakness Enumeration (CWEs)</b></td>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <a href="https://docs.aws.amazon.com/codeguru/detector-library/python/sns-unauthenticated-unsubscribe">
+          Unauthenticated Amazon SNS unsubscribe requests might succeed
+        </a>
+      </td>
+      <td>
+        python/sns-unauthenticated-unsubscribe@v1.0
+      </td>
+      <td>
+        <a href="https://cwe.mitre.org/data/definitions/19.html">
+          CWE-19
+        </a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+<hr/>                    
+<p class="h3">Suggested Fix</p>
+<p>Escape all special characters to their corresponding entities (for e.g. &#60;). Any untrusted input will be converted to a safe format and displayed as data to the user. The untrusted data will not be executed as code in the browser.</p>
+<div class="actions"><a href="">Apply Fix</a></div>
+""".trimIndent()
+
+
+        val markdownText = """
+```diff
+@@ -20,3 +20,3 @@                                               
+         // There does not exist any validation                 
+-        modelAndView.addObject(ID, id);                        
++        modelAndView.addObject(ID, HtmlUtils.htmlEscape(id));  
+         return modelAndView;                                   
+```
+        """.trimIndent()
+
+
+        val diffContent = renderMarkdownWithColorDiff(
+            markdownText
+        )
+
+//        println("$css$description$diffContent")
+
+        var recomendation =  CodeScanRecommendation(
+            "improper-privilege-management.py",
+            3,
+            3,
+            "CWE-269 - Improper privilege management",
+            Description(
+                "Privilege escalation occurs when a malicious user exploits a bug, design flaw, or configuration error in an application or operating system to gain elevated access to the system. Elevated privileges can be used to delete files, view private information, or install unwanted programs or backdoors.",
+                "$css$description$diffContent"
+                )
+        )
+
+        val scanRecommendations: List<CodeScanRecommendation> = listOf(recomendation)
+        var issues: List<CodeWhispererCodeScanIssue> = mapRecoToCodeScanIssues(scanRecommendations)
+        var codeScanResponseContext = defaultCodeScanResponseContext()
+        return CodeScanResponse.Success(issues, codeScanResponseContext)
+    }
+
+
+    private fun renderMarkdownWithColorDiff(markdown: String): String {
+
+
+        val diffPattern = """```diff([\s\S]*?)```""".toRegex()
+        val resultHtml = diffPattern.replace(markdown) {
+            val diffContent = it.groups[1]?.value ?: ""
+//            println(diffContent)
+            val processedDiff = processDiffContent(diffContent.trim())
+            processedDiff
+        }
+
+        return """
+            <div class="code-diff-snippet">
+                $resultHtml
+            </div>
+        """.trimIndent()
+    }
+
+    private fun processDiffContent(diffContent: String): String {
+        // Split the diff content into lines
+        val lines = diffContent.split('\n')
+
+        val processedLines = lines.map { line ->
+            when {
+                line.startsWith("- ") -> """
+                    <div class="diff-removed">
+                        <div class="code">
+                            <pre>$line</pre>
+                        </div>
+                    </div>
+                """.trimIndent()
+                line.startsWith("+ ") -> """
+                    <div class="diff-added">
+                        <div class="code">
+                            <pre>$line</pre>
+                        </div>
+                    </div>
+                """.trimIndent()
+                else -> """
+                    <div class="code">
+                        <pre>$line</pre>
+                    </div>
+                """.trimIndent()
+            }
+        }
+
+        return processedLines.joinToString("")
+    }
+
+    fun mapRecoToCodeScanIssues(scanRecommendations: List<CodeScanRecommendation>): List<CodeWhispererCodeScanIssue> {
+        LOG.debug { "Total code scan issues returned from service: ${scanRecommendations.size}" }
+        return scanRecommendations.mapNotNull {
+            val file = try {
+                LocalFileSystem.getInstance().findFileByIoFile(
+                    Path.of(sessionContext.sessionConfig.projectRoot.path, it.filePath).toFile()
+                )
+            } catch (e: Exception) {
+                LOG.debug { "Cannot find file at location ${it.filePath}" }
+                null
+            }
+            when (file?.isDirectory) {
+                false -> {
+                    runReadAction {
+                        FileDocumentManager.getInstance().getDocument(file)
+                    }?.let { document ->
+                        val endCol = document.getLineEndOffset(it.endLine - 1) - document.getLineStartOffset(it.endLine - 1) + 1
+                        CodeWhispererCodeScanIssue(
+                            startLine = it.startLine,
+                            startCol = 1,
+                            endLine = it.endLine,
+                            endCol = endCol,
+                            file = file,
+                            project = sessionContext.project,
+                            title = it.title,
+                            description = it.description
+                        )
+                    }
+                }
+                else -> null
+            }
+        }.onEach { issue ->
+            // Add range highlighters for all the issues found.
+            runInEdt {
+                issue.rangeHighlighter = issue.addRangeHighlighter()
+            }
+        }
+    }
 
     /**
      * Note that this function makes network calls and needs to be run from a background thread.
@@ -74,7 +250,7 @@ class CodeWhispererCodeScanSession(val sessionContext: CodeScanSessionContext) {
      *  5. Keep polling the API GetCodeScan to wait for results for a given timeout period.
      *  6. Return the results from the ListCodeScan API.
      */
-    suspend fun run(): CodeScanResponse {
+    suspend fun runOld(): CodeScanResponse {
         var issues: List<CodeWhispererCodeScanIssue> = listOf()
         var codeScanResponseContext = defaultCodeScanResponseContext()
         val currentCoroutineContext = coroutineContext
@@ -185,6 +361,7 @@ class CodeWhispererCodeScanSession(val sessionContext: CodeScanSessionContext) {
             LOG.debug { "Rendering response to display security scan results." }
             currentCoroutineContext.ensureActive()
             issues = mapToCodeScanIssues(documents)
+//            print(issues)
             codeScanResponseContext = codeScanResponseContext.copy(codeScanTotalIssues = issues.count())
             codeScanResponseContext = codeScanResponseContext.copy(reason = "Succeeded")
             return CodeScanResponse.Success(issues, codeScanResponseContext)
@@ -364,7 +541,7 @@ sealed class CodeScanResponse {
     ) : CodeScanResponse()
 }
 
-internal data class CodeScanRecommendation(
+data class CodeScanRecommendation(
     val filePath: String,
     val startLine: Int,
     val endLine: Int,
