@@ -26,10 +26,17 @@ fun formatText(project: Project, language: Language, content: String): String {
 }
 
 fun convertMarkdownToHTML(markdown: String): String {
-    val parser: Parser = Parser.builder().build()
-    val document: Node = parser.parse(markdown)
-    val htmlRenderer: HtmlRenderer = HtmlRenderer.builder().build()
-    return htmlRenderer.render(document)
+    // val parser: Parser = Parser.builder().build()
+    // val document: Node = parser.parse(markdown)
+    // val htmlRenderer: HtmlRenderer = HtmlRenderer.builder().build()
+    // return htmlRenderer.render(document)
+    
+    val extensions = listOf(TablesExtension.create(), StrikethroughExtension.create())
+    val parser = Parser.builder().extensions(extensions).build()
+    val renderer = HtmlRenderer.builder().extensions(extensions).build()
+
+    // Parse the Markdown text and render it to HTML
+    return renderer.render(parser.parse(markdown))
 }
 
 /**
