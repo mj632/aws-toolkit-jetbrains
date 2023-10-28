@@ -9,9 +9,10 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.codeStyle.CodeStyleManager
-import org.commonmark.node.Node
-import org.commonmark.parser.Parser
-import org.commonmark.renderer.html.HtmlRenderer
+import com.vladsch.flexmark.ext.gfm.strikethrough.StrikethroughExtension
+import com.vladsch.flexmark.ext.tables.TablesExtension
+import  com.vladsch.flexmark.parser.Parser
+import  com.vladsch.flexmark.html.HtmlRenderer
 
 fun formatText(project: Project, language: Language, content: String): String {
     var result = content
