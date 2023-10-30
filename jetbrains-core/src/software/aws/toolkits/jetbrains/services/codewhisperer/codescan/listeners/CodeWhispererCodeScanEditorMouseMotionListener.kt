@@ -22,7 +22,7 @@ import software.aws.toolkits.core.utils.error
 import software.aws.toolkits.core.utils.getLogger
 import software.aws.toolkits.jetbrains.services.codewhisperer.codescan.CodeWhispererCodeScanIssue
 import software.aws.toolkits.jetbrains.services.codewhisperer.codescan.CodeWhispererCodeScanManager
-import software.aws.toolkits.jetbrains.utils.convertMarkdownToHTML
+import software.aws.toolkits.jetbrains.utils.covertToHtml
 import java.awt.Dimension
 import javax.swing.BorderFactory
 import javax.swing.BoxLayout
@@ -31,6 +31,9 @@ import javax.swing.JEditorPane
 import javax.swing.JPanel
 import javax.swing.ScrollPaneConstants
 import javax.swing.event.HyperlinkEvent
+import javax.swing.text.Document
+import javax.swing.text.html.HTMLEditorKit
+import javax.swing.text.html.StyleSheet
 
 
 class CodeWhispererCodeScanEditorMouseMotionListener(private val project: Project) : EditorMouseMotionListener {
@@ -54,10 +57,26 @@ class CodeWhispererCodeScanEditorMouseMotionListener(private val project: Projec
             }
             return
         }
-        val description = convertMarkdownToHTML(issue.description.markdown)
-        val codeFix = issue
+        val htmlString = covertToHtml(issue)
+        val kit = HTMLEditorKit()
 
-        val editorPane = JEditorPane("text/html", description).apply {
+        // add some styles to the html
+        val styleSheet: StyleSheet = kit.getStyleSheet()
+        styleSheet.addRule(".code-diff-snippet { background-color: #2b2b2b; margin: 15px 0px;}")
+        styleSheet.addRule(".diff-added {background-color: #044B53;}")
+        styleSheet.addRule(".diff-removed { background-color: #632f34;}")
+        styleSheet.addRule(".code { padding: 0px 15px; color: #fff;}")
+        styleSheet.addRule(".yes { color: #1d8102;}")
+        styleSheet.addRule(".no { color: #d13212;}")
+        styleSheet.addRule("hr { margin: 5px;}")
+        styleSheet.addRule(".h3 {font-size: 14px; letter-spacing: normal; margin: 0px; margin-bottom: 10px;}")
+        styleSheet.addRule(".h4 {font-size: 12px; letter-spacing: normal; font-weight: 400; margin: 5px 0px;}")
+
+        // create a document, set it on the jeditorpane, then add the html
+        val doc: Document = kit.createDefaultDocument()
+
+
+        val editorPane = JEditorPane().apply {
             putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, true)
             border = BorderFactory.createCompoundBorder(
                 BorderFactory.createEmptyBorder(),
@@ -69,6 +88,9 @@ class CodeWhispererCodeScanEditorMouseMotionListener(private val project: Projec
                     BrowserUtil.browse(he.url)
                 }
             }
+            editorKit = kit
+            document = doc
+            text = htmlString
         }
         val button = JButton("Apply fix")
         button.alignmentX = 0f

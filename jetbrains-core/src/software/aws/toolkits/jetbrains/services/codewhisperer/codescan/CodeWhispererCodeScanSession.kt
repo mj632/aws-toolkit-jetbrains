@@ -69,80 +69,27 @@ class CodeWhispererCodeScanSession(val sessionContext: CodeScanSessionContext) {
 
     private fun now() = Instant.now().toEpochMilli()
     suspend fun run(): CodeScanResponse {
-        val css = """            
-            <style>
-                .code-diff-snippet { background-color: #2b2b2b; margin: 15px 0px;}
-                .diff-added {background-color: #044B53; }
-                .diff-removed { background-color: #632f34; }
-                .code { padding: 0px 15px; color: #fff;}
-                .h3 { font-size: 12px; font-weight: bold; }
-                .actions { display: inline-flex; }
-            </style>
-        """.trimIndent()
-        val description = """
-<h2>CWE-70 Unauthenticated Amazon SNS unsubscribe requests might succeed</h2>
-<p>Failing to set the `AuthenticateOnUnsubscribe` flag to `True` when confirming an SNS subscription causes all unsubscribe requests to succeed, even if they are unauthenticated. Consider setting this flag to `True`.</p>
-<hr/>
-
-<table>
-  <thead class="table-header">
-    <tr>
-      <td><b>Detector Name</b></td>
-      <td><b>Detector ID</b></td>
-      <td><b>Common Weakness Enumeration (CWEs)</b></td>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>
-        <a href="https://docs.aws.amazon.com/codeguru/detector-library/python/sns-unauthenticated-unsubscribe">
-          Unauthenticated Amazon SNS unsubscribe requests might succeed
-        </a>
-      </td>
-      <td>
-        python/sns-unauthenticated-unsubscribe@v1.0
-      </td>
-      <td>
-        <a href="https://cwe.mitre.org/data/definitions/19.html">
-          CWE-19
-        </a>
-      </td>
-    </tr>
-  </tbody>
-</table>
-<hr/>                    
-<p class="h3">Suggested Fix</p>
-<p>Escape all special characters to their corresponding entities (for e.g. &#60;). Any untrusted input will be converted to a safe format and displayed as data to the user. The untrusted data will not be executed as code in the browser.</p>
-<div class="actions"><a href="">Apply Fix</a></div>
-""".trimIndent()
-
-
-        val markdownText = """
-```diff
-@@ -20,3 +20,3 @@                                               
-         // There does not exist any validation                 
--        modelAndView.addObject(ID, id);                        
-+        modelAndView.addObject(ID, HtmlUtils.htmlEscape(id));  
-         return modelAndView;                                   
-```
-        """.trimIndent()
-
-
-        val diffContent = renderMarkdownWithColorDiff(
-            markdownText
+        val recommendation = Recommendation("A cross-site scripting (XSS) vulnerability was detected in your code, allowing an attacker to run arbitrary JavaScript in users' browser. The attacker could steal session cookies, download and install malicious files, redirect users to malicious domains, and more. Always assume all inputs are malicious, such as user-provided parameters, hidden fields, cookies, headers, and the URL. Use allow-list filtering, perform proper output encoding, escaping, and quoting against all inputs.", "amazon.com")
+        val suggestedFix = SuggestedFix("Escape all special characters to their corresponding entities (for e.g. <). Any untrusted input will be converted to a safe format and displayed as data to the user. The untrusted data will not be executed as code in the browser.",
+            "@@ -20,4 +20,4 @@\n def getInputs():\n-    source = input(\"Enter the source file name: \")\n-    clone = input(\"Enter the clone file name: \")\n+    source = sys.argv[0]\n+    clone = sys.argv[1]\n     return source, clone"
         )
-
-//        println("$css$description$diffContent")
+        val remediation = Remediation(recommendation, listOf(suggestedFix))
 
         var recomendation =  CodeScanRecommendation(
-            "improper-privilege-management.py",
-            3,
-            3,
-            "CWE-269 - Improper privilege management",
+            "sample.py",
+            20,
+            22,
+            "CWE-400, 664 Resource leak",
             Description(
-                "Privilege escalation occurs when a malicious user exploits a bug, design flaw, or configuration error in an application or operating system to gain elevated access to the system. Elevated privileges can be used to delete files, view private information, or install unwanted programs or backdoors.",
-                "$css$description$diffContent"
-                )
+                "Resource leak: Allocated resources are not released properly. This can slow down or crash your system. They must be closed along all paths to prevent a resource leak.",
+                "Resource leak: Allocated resources are not released properly. This can slow down or crash your system. They must be closed along all paths to prevent a resource leak."
+                ),
+            "python/sns-unauthenticated-unsubscribe@v1.0",
+           "Unauthenticated Amazon SNS unsubscribe requests might succeed",
+            "111111111",
+            listOf("CWE-19"),
+            "High",
+            remediation,
         )
 
         val scanRecommendations: List<CodeScanRecommendation> = listOf(recomendation)
@@ -152,54 +99,9 @@ class CodeWhispererCodeScanSession(val sessionContext: CodeScanSessionContext) {
     }
 
 
-    private fun renderMarkdownWithColorDiff(markdown: String): String {
 
 
-        val diffPattern = """```diff([\s\S]*?)```""".toRegex()
-        val resultHtml = diffPattern.replace(markdown) {
-            val diffContent = it.groups[1]?.value ?: ""
-//            println(diffContent)
-            val processedDiff = processDiffContent(diffContent.trim())
-            processedDiff
-        }
 
-        return """
-            <div class="code-diff-snippet">
-                $resultHtml
-            </div>
-        """.trimIndent()
-    }
-
-    private fun processDiffContent(diffContent: String): String {
-        // Split the diff content into lines
-        val lines = diffContent.split('\n')
-
-        val processedLines = lines.map { line ->
-            when {
-                line.startsWith("- ") -> """
-                    <div class="diff-removed">
-                        <div class="code">
-                            <pre>$line</pre>
-                        </div>
-                    </div>
-                """.trimIndent()
-                line.startsWith("+ ") -> """
-                    <div class="diff-added">
-                        <div class="code">
-                            <pre>$line</pre>
-                        </div>
-                    </div>
-                """.trimIndent()
-                else -> """
-                    <div class="code">
-                        <pre>$line</pre>
-                    </div>
-                """.trimIndent()
-            }
-        }
-
-        return processedLines.joinToString("")
-    }
 
     fun mapRecoToCodeScanIssues(scanRecommendations: List<CodeScanRecommendation>): List<CodeWhispererCodeScanIssue> {
         LOG.debug { "Total code scan issues returned from service: ${scanRecommendations.size}" }
@@ -226,7 +128,14 @@ class CodeWhispererCodeScanSession(val sessionContext: CodeScanSessionContext) {
                             file = file,
                             project = sessionContext.project,
                             title = it.title,
-                            description = it.description
+                            description = it.description,
+                            detectorId = it.detectorId,
+                            detectorName = it.detectorName,
+                            findingId = it.findingId,
+                            relatedVulnerabilities = it.relatedVulnerabilities,
+                            severity = it.severity,
+                            recommendation = it.remediation.recommendation,
+                            suggestedFixes = it.remediation.suggestedFixes
                         )
                     }
                 }
@@ -493,7 +402,14 @@ class CodeWhispererCodeScanSession(val sessionContext: CodeScanSessionContext) {
                             file = file,
                             project = sessionContext.project,
                             title = it.title,
-                            description = it.description
+                            description = it.description,
+                            detectorId = it.detectorId,
+                            detectorName = it.detectorName,
+                            findingId = it.findingId,
+                            relatedVulnerabilities = it.relatedVulnerabilities,
+                            severity = it.severity,
+                            recommendation = it.remediation.recommendation,
+                            suggestedFixes = it.remediation.suggestedFixes
                         )
                     }
                 }
@@ -546,10 +462,22 @@ data class CodeScanRecommendation(
     val startLine: Int,
     val endLine: Int,
     val title: String,
-    val description: Description
+    val description: Description,
+    val detectorId: String,
+    val detectorName: String,
+    val findingId: String,
+    val relatedVulnerabilities: List<String>,
+    val severity: String,
+    val remediation: Remediation
 )
 
 data class Description(val text: String, val markdown: String)
+
+data class Remediation(val recommendation: Recommendation, val suggestedFixes: List<SuggestedFix>)
+
+data class Recommendation(val text: String, val url: String)
+
+data class SuggestedFix(val description: String, val code: String)
 
 data class CodeScanSessionContext(
     val project: Project,
