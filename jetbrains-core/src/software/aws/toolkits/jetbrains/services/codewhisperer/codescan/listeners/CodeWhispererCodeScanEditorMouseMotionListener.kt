@@ -4,9 +4,8 @@
 package software.aws.toolkits.jetbrains.services.codewhisperer.codescan.listeners
 
 import com.intellij.ide.BrowserUtil
-import com.intellij.openapi.application.Application
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.runInEdt
+import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.event.EditorMouseEvent
 import com.intellij.openapi.editor.event.EditorMouseEventArea
 import com.intellij.openapi.editor.event.EditorMouseMotionListener
@@ -14,6 +13,8 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.psi.PsiDocumentManager
+
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.popup.AbstractPopup
@@ -49,7 +50,6 @@ class CodeWhispererCodeScanEditorMouseMotionListener(private val project: Projec
     }
 
     private fun showPopup(issue: CodeWhispererCodeScanIssue?, e: EditorMouseEvent) {
-        var buttonClicks = 0
 
         if (issue == null) {
             LOG.debug {
@@ -99,37 +99,22 @@ class CodeWhispererCodeScanEditorMouseMotionListener(private val project: Projec
         // TODO: add hover css
         button.addActionListener { e ->
             runInEdt {
-
-                val document = FileDocumentManager.getInstance().getDocument(issue.file)
-                println("------------------------------------------")
-                println(document?.text)
-                println("------------------------------------------")
-                val application: Application = ApplicationManager.getApplication()
-                val runnable = Runnable {
-                    // your code here
-                    if (document != null) {
-                        val lineCount = document.lineCount
-                        document.replaceString(0, lineCount,
-                            """def set_user_noncompliant():
-                            import os
-                            root = 0
-                            # set_user_noncompliance: the process user is set to root.
-                            sys.argv[0]
-                                            """.trimIndent())
+                WriteCommandAction.runWriteCommandAction(issue.project) {
+                    val document = FileDocumentManager.getInstance().getDocument(issue.file)
+                    if(document !== null){
+                        document.replaceString(
+                            document.getLineStartOffset(19),
+                            document.getLineEndOffset(22),
+                            """def getInputs():
+    source = sys.argv[0]
+    clone = sys.argv[1]
+    return source, clone
+                                               """.trimIndent()
+                        )
+                        PsiDocumentManager.getInstance(issue.project).commitDocument(document)
                     }
                 }
-                if (application.isDispatchThread) {
-                    application.runWriteAction(runnable)
-                } else {
-                    application.invokeLater { application.runWriteAction(runnable) }
-                }
-
-
-
-
             }
-            buttonClicks++
-            button.text = "Apply fix $buttonClicks times clicked"
         }
         //Lay out the buttons from left to right.
         val buttonPane = JPanel()
@@ -152,7 +137,6 @@ class CodeWhispererCodeScanEditorMouseMotionListener(private val project: Projec
 
         val popup = JBPopupFactory.getInstance().createComponentPopupBuilder(containerPane, null)
             .setFocusable(true)
-//            .setTitle(issue.title)
             .createPopup()
         // Set the currently shown issue popup context as this issue
         popup.size = (popup as AbstractPopup).preferredContentSize
